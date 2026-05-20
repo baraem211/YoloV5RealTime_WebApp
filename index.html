@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOLOv5 실시간 객체 탐지</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+  <!-- COCO-SSD Object Detection Model -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+</head>
+<body>
+  <!-- 배경 파티클 -->
+  <div class="bg-grid"></div>
+
+  <!-- 헤더 -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon"><i class="fa-solid fa-crosshairs"></i></span>
+        <div>
+          <span class="logo-title">YOLOv5</span>
+          <span class="logo-sub">실시간 객체 탐지</span>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-green"><i class="fa-solid fa-circle-dot fa-beat"></i> COCO-SSD</span>
+        <span class="badge badge-blue"><i class="fa-brands fa-chrome"></i> Web AI</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 메인 -->
+  <main class="main-container">
+
+    <!-- 좌측: 카메라 뷰 -->
+    <section class="camera-section" id="camera-section">
+      <div class="section-header">
+        <h2><i class="fa-solid fa-video"></i> 실시간 카메라</h2>
+        <div class="fps-badge" id="fps-badge">
+          <i class="fa-solid fa-gauge-high"></i>
+          <span id="fps-display">0</span> FPS
+        </div>
+      </div>
+
+      <div class="video-wrapper" id="video-wrapper">
+        <!-- 로딩 오버레이 -->
+        <div class="overlay" id="overlay">
+          <div class="overlay-content">
+            <div class="spinner"></div>
+            <p id="overlay-text">모델 로딩 중...</p>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar" id="progress-bar"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 시작 전 화면 -->
+        <div class="start-screen" id="start-screen">
+          <div class="start-content">
+            <div class="start-icon pulse">
+              <i class="fa-solid fa-camera"></i>
+            </div>
+            <h3>카메라를 시작하세요</h3>
+            <p>버튼을 눌러 실시간 객체 탐지를 시작합니다</p>
+          </div>
+        </div>
+        <video id="webcam" autoplay muted playsinline></video>
+        <canvas id="detection-canvas"></canvas>
+      </div>
+
+      <!-- 컨트롤 버튼 -->
+      <div class="controls">
+        <button class="btn btn-primary" id="start-btn">
+          <i class="fa-solid fa-play"></i> 탐지 시작
+        </button>
+        <button class="btn btn-danger" id="stop-btn" disabled>
+          <i class="fa-solid fa-stop"></i> 중지
+        </button>
+        <button class="btn btn-secondary" id="snapshot-btn" disabled>
+          <i class="fa-solid fa-camera-retro"></i> 스냅샷
+        </button>
+        <button class="btn btn-secondary" id="fullscreen-btn" disabled>
+          <i class="fa-solid fa-expand"></i>
+        </button>
+      </div>
+
+      <!-- 설정 패널 -->
+      <div class="settings-panel">
+        <div class="setting-item">
+          <label><i class="fa-solid fa-sliders"></i> 신뢰도 임계값</label>
+          <div class="slider-row">
+            <input type="range" id="confidence-slider" min="0.1" max="0.95" step="0.05" value="0.5" />
+            <span id="confidence-value" class="slider-val">0.50</span>
+          </div>
+        </div>
+        <div class="setting-item">
+          <label><i class="fa-solid fa-forward-step"></i> 프레임 스킵</label>
+          <div class="slider-row">
+            <input type="range" id="skip-slider" min="1" max="5" step="1" value="1" />
+            <span id="skip-value" class="slider-val">1</span>
+          </div>
+        </div>
+        <div class="setting-item">
+          <label><i class="fa-solid fa-palette"></i> 박스 스타일</label>
+          <select id="box-style">
+            <option value="filled">채움</option>
+            <option value="outline">외곽선만</option>
+            <option value="corner">모서리</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- 우측: 정보 패널 -->
+    <aside class="info-panel">
+
+      <!-- 통계 카드 -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon" style="background: rgba(99,102,241,0.15); color:#818cf8;">
+            <i class="fa-solid fa-eye"></i>
+          </div>
+          <div>
+            <div class="stat-val" id="stat-total">0</div>
+            <div class="stat-label">총 탐지 수</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background: rgba(34,197,94,0.15); color:#4ade80;">
+            <i class="fa-solid fa-boxes-stacked"></i>
+          </div>
+          <div>
+            <div class="stat-val" id="stat-current">0</div>
+            <div class="stat-label">현재 객체</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background: rgba(251,146,60,0.15); color:#fb923c;">
+            <i class="fa-solid fa-tags"></i>
+          </div>
+          <div>
+            <div class="stat-val" id="stat-classes">0</div>
+            <div class="stat-label">클래스 수</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background: rgba(236,72,153,0.15); color:#f472b6;">
+            <i class="fa-solid fa-clock"></i>
+          </div>
+          <div>
+            <div class="stat-val" id="stat-frames">0</div>
+            <div class="stat-label">처리 프레임</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 현재 탐지 목록 -->
+      <div class="detection-list-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-list-check"></i> 현재 탐지 객체</h3>
+          <span class="live-dot"><i class="fa-solid fa-circle fa-beat"></i> LIVE</span>
+        </div>
+        <div id="detection-list" class="detection-list">
+          <div class="empty-msg">
+            <i class="fa-regular fa-face-meh"></i>
+            <p>탐지된 객체가 없습니다</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 클래스별 빈도 차트 -->
+      <div class="chart-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-chart-bar"></i> 클래스별 탐지 횟수</h3>
+          <button class="btn-icon" id="reset-stats">
+            <i class="fa-solid fa-rotate"></i>
+          </button>
+        </div>
+        <div id="class-chart" class="class-chart"></div>
+      </div>
+
+      <!-- 모델 정보 -->
+      <div class="model-info-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-microchip"></i> 모델 정보</h3>
+        </div>
+        <div class="model-info-grid">
+          <div class="info-row">
+            <span class="info-key">모델</span>
+            <span class="info-val">COCO-SSD (MobileNet)</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">클래스</span>
+            <span class="info-val">80개 (COCO)</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">백엔드</span>
+            <span class="info-val" id="tf-backend">감지 중...</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">상태</span>
+            <span class="info-val" id="model-status">
+              <span class="status-dot idle"></span> 준비 중
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- 스냅샷 모달 -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-camera-retro"></i> 스냅샷 저장</h3>
+        <button class="modal-close" id="modal-close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <canvas id="snapshot-canvas"></canvas>
+      </div>
+      <div class="modal-footer">
+        <a id="download-link" class="btn btn-primary" download="detection_snapshot.png">
+          <i class="fa-solid fa-download"></i> 이미지 저장
+        </a>
+        <button class="btn btn-secondary" id="modal-close-btn">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
